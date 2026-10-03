@@ -1,0 +1,112 @@
+name: CI
+
+on:
+  push:
+    branches: ["main", "master"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  lint:
+    name: 静态检查
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip ruff
+      - run: ruff check src tests scripts eval
+
+  test:
+    name: 测试 (py${{ matrix.python-version }} / jieba=${{ matrix.jieba }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        # jieba 是可选依赖，所以两条路都必须测：
+        # 不装的时候 tokenize 会降级成字符 bigram，引擎仍然要能出结果。
+        # 只测「装了 jieba」那一条，等于把降级路径的承诺放在嘴上。
+        jieba: ["with"]
+        include:
+          - python-version: "3.12"
+            jieba: "without"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: 安装（含中文分词）
+        if: matrix.jieba == 'with'
+        run: python -m pip install -e ".[zh,dev]"
+
+      - name: 安装（不含中文分词，验证降级路径）
+        if: matrix.jieba == 'without'
+        run: |
+          python -m pip install -e ".[dev]"
+          python -c "import jieba" 2>/dev/null && { echo 'jieba 竟然已存在，这条矩阵失去意义'; exit 1; } || echo 'jieba 未安装，降级路径生效'
+
+      - run: python -m pytest tests -q
+
+  smoke:
+    name: 端到端冒烟
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e ".[zh]"
+
+      - name: 生成合成数据
+        run: python scripts/gen_sample.py
+
+      - name: 跑评测并断言检测能力没有退化
+        run: |
+          python eval/run_eval.py
+          # 冒烟断言：全量配置下必须能挖出团伙，且指标不为零。
+          # 阈值刻意只卡在「功能还在」的最低线上 —— 卡得太死会让正常的
+          # 调参变成红叉，那反而会逼着后人把 CI 删掉。
+          python - <<'PY'
+          import pathlib
+
+          md = pathlib.Path("docs/benchmark.md").read_text(encoding="utf-8")
+
+          def section(title: str) -> list[str]:
+              """取出某个二级标题下的正文行，避免靠「哪一行长什么样」去猜。"""
+              _, found, tail = md.partition(f"## {title}")
+              assert found, f"评测报告缺少「{title}」一节"
+              return tail.split("\n## ")[0].splitlines()
+
+          def total_row(lines: list[str]) -> list[str]:
+              row = next((l for l in lines if l.startswith("| 全量 |")), None)
+              assert row, "这一节里找不到全量的那一行"
+              return [c.strip() for c in row.strip("|").split("|")]
+
+          # | 实验 | 启用信号 | item P | item R | item F1 | actor P | actor R | actor F1 | 耗时 |
+          cells = total_row(section("主对比"))
+          signals = int(cells[1])
+          item_f1, actor_f1 = float(cells[4]), float(cells[7])
+          assert signals >= 8, f"启用的信号数异常偏少: {signals}"
+          assert item_f1 > 0, "item F1 退化为 0"
+          assert actor_f1 > 0, "actor F1 退化为 0"
+
+          # | 实验 | 团伙数 | 平均纯度 | 明细 |
+          group_cells = total_row(section("团伙检测纯度"))
+          assert int(group_cells[1]) > 0, "全量配置下一个团伙都没挖出来"
+          assert float(group_cells[2]) > 0, "团伙纯度为 0，说明抓出来的全是误报"
+
+          print(
+              f"冒烟通过：信号 {signals} 个，item F1 {item_f1}，actor F1 {actor_f1}，"
+              f"团伙 {group_cells[1]} 个（纯度 {group_cells[2]}）"
+          )
+          PY
+
+      - name: CLI 冒烟
+        run: |
+          python -m tidewatch.cli scan data/sample/sample.jsonl --limit 5 --out out/ci-report.md
+          test -s out/ci-report.md
+          python -m tidewatch.cli signals > /dev/null
+          python -m tidewatch.cli rules > /dev/null

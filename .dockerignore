@@ -1,0 +1,36 @@
+# 构建镜像时要排除的东西
+
+# 版本控制与 CI
+.git
+.github
+.gitignore
+
+# Python 缓存与虚拟环境
+__pycache__
+*.py[cod]
+*.egg-info
+.venv
+venv
+.pytest_cache
+.ruff_cache
+.coverage
+htmlcov
+
+# 原始数据：**最重要的排除项**。
+# 抓取下来的评论/弹幕可能含个人信息，绝不能被打进镜像分发出去。
+data/raw
+
+# 检测产物
+out
+
+# 编辑器与系统
+.vscode
+.idea
+.DS_Store
+Thumbs.db
+
+# 密钥与 Cookie
+.env
+.env.*
+*.key
+cookies.txt

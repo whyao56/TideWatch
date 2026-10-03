@@ -1,0 +1,25 @@
+# 统一换行符：默认 LF。
+#
+# 不加这个文件的话，Windows 上 clone 下来的工作区会被自动转成 CRLF，
+# 于是每次改动都混进一堆「整文件都在变」的假 diff，review 时根本看不出真实改动。
+# 这个项目的 shell 脚本和 Dockerfile 在 Linux 上执行，LF 是必须的。
+
+* text=auto eol=lf
+
+# 少数必须在 Windows 上保持 CRLF 的格式
+*.bat  text eol=crlf
+*.cmd  text eol=crlf
+*.ps1  text eol=crlf
+
+# 二进制文件不做任何换行处理
+*.png  binary
+*.jpg  binary
+*.gif  binary
+*.ico  binary
+*.pdf  binary
+*.zip  binary
+*.whl  binary
+
+# 数据文件在 diff 里不该被当成文本展开 —— 它们动辄几百行 JSON
+data/**/*.jsonl  -diff
+docs/benchmark.md linguist-generated=true
