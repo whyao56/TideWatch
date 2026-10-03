@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tidewatch"
+version = "0.1.0"
+description = "可解释、可插拔、可迭代的网络水军与协同行为识别引擎"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "tidewatch contributors" }]
+keywords = ["astroturfing", "coordinated-inauthentic-behavior", "content-moderation", "osint"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Topic :: Security",
+    "Topic :: Text Processing :: Linguistic",
+]
+dependencies = [
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+# jieba 是可选依赖：不装也能跑（自动降级为字符 bigram），装了分词更准。
+zh = ["jieba>=0.42"]
+dev = ["pytest>=7.0", "ruff>=0.5"]
+
+[project.scripts]
+tidewatch = "tidewatch.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+exclude = ["data", "out", "experiments"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = [
+    "E501",  # 行宽交给格式化工具，注释里的中文按字符数算会误报
+]
+
+[tool.ruff.lint.isort]
+# conftest 是测试包内的共享夹具模块，不是第三方库。
+# 不声明的话 ruff 会把它归到三方组，逼着 import 顺序变得和直觉相反。
+known-first-party = ["tidewatch", "conftest"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

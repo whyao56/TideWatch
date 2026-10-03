@@ -1,0 +1,134 @@
+# tidewatch 主配置
+#
+# 所有会变的参数都收在这里 —— 做对照实验时改这里，不改代码。
+# 命令行可临时覆盖：
+#   python -m tidewatch.cli scan data.jsonl --set signals.text.template.weak=0.18
+# 环境变量也可以（容器里方便）：
+#   TW__signals__coordination__burst__window_seconds=120
+#
+# 注意 signals 下面是「层级 -> 信号名」的嵌套结构，不是 "text.template" 这样的
+# 扁平键。因为配置查找用点做路径分隔符，扁平的含点键名会导致查不到、
+# 静默回落到默认值 —— 这个坑踩过一次，记在这里。
+
+project:
+  name: tidewatch
+  version: "0.1.0"
+
+corpus:
+  rules_dir: rules
+  sample_dir: data/sample
+  eval_dir: data/eval
+  out_dir: out
+
+signals:
+  # ==================== 文本层 ====================
+  # 最便宜、每条都能算；但也最容易被规避，所以层权重最低（见 scoring.kind_weights）。
+
+  text:
+    template:
+      enabled: true
+      weight: 1.0
+      n: 3                # n-gram 的 n
+      min_tokens: 12      # 词数不够时不表态（短评的重复率天然偏高）
+      weak: 0.22
+      strong: 0.42
+
+    repetition:
+      enabled: true
+      weight: 0.7
+      min_chars: 10
+      char_ratio: 0.45        # 最高频字符占比超过此值 -> 弱嫌疑
+      strong_ratio: 0.6
+      run_length: 6           # 连续相同字符超过此长度 -> 命中
+
+    keyword:
+      enabled: true
+      weight: 1.0
+      strong_tags: ["导流", "招募"]
+
+    evasion:
+      enabled: true
+      weight: 1.2         # 「刻意规避」本身就是很硬的信号
+      min_extra: 1        # 至少几条话术是靠折叠才捞出来的
+
+  # ==================== 账号层 ====================
+  # 弱信号。这一层永远不该单独定案，详见 account_signals.py 的模块说明。
+
+  account:
+    age:
+      enabled: true
+      weight: 0.6
+      fresh_days: 30
+      very_fresh_days: 7
+
+    originality:
+      enabled: true
+      weight: 0.8
+      min_posts: 5        # 发言少于这个数不评估（样本不足）
+      copy_ratio: 0.6     # 自身发言中与他人高度重复的比例
+
+    profile:
+      enabled: true
+      weight: 0.5
+      follower_ratio: 5.0 # 关注/(粉丝+1) 超过此值 -> 计入复合分
+
+  # ==================== 协同层 ====================
+  # 核心。对手可以伪造身份，但很难伪造「各自独立」。
+
+  coordination:
+    burst:
+      enabled: true
+      weight: 1.4
+      window_seconds: 300
+      min_items: 8            # 窗口内少于这么多条不评估（样本太小）
+      min_actors: 3           # 必须来自这么多**不同账号**才算协同，否则是单人刷屏
+      density_ratio: 2.5      # 窗口密度 / 全时段密度
+
+    cluster:
+      enabled: true
+      weight: 1.5
+      similarity: 0.72        # SimHash 相似度阈值（一级过滤，便宜）
+      lcs_ratio: 0.5          # 最长公共子串比例阈值（二级确认，昂贵）
+      min_cluster: 3          # 簇里至少这么多条
+      min_actors: 3           # 且必须来自这么多不同账号
+      min_chars: 10
+
+    cooccur:
+      enabled: true
+      weight: 1.2
+      min_shared: 3           # 共同话题数的下限
+      overlap: 0.5            # 共同话题数 / 并集，防止「大板块常客」误报
+      min_members: 3
+
+scoring:
+  # 各层基础权重。协同层最高 —— 对手可以伪造身份，但很难伪造「各自独立」。
+  kind_weights:
+    text: 0.9
+    account: 0.7
+    coordination: 1.3
+
+  # 信号自身确信度的倍率：同一个信号，判 STRONG 比判 WEAK 贡献更多分。
+  level_multiplier:
+    weak: 1.0
+    strong: 1.5
+
+  # 联动加分：模仿 VirusDetector 的跨规则联动 —— 单信号命中不可怕，
+  # 多个**层级**同时命中才是真的可疑。
+  synergy:
+    min_kinds: 2
+    bonus_per_extra: 8.0
+
+  # 量纲缩放。改这个值等于整体调灵敏度，做对照实验时不要动它。
+  scale: 25.0
+
+  # 团伙 -> 成员的传播：协同层产出的是「团伙」，使用者要的是「哪些账号」。
+  # factor 是传给成员的分数比例，压得比较低是因为团伙一旦误报会连坐全部成员。
+  propagation:
+    enabled: true
+    factor: 0.6
+
+  levels:
+    weak: 20
+    strong: 50
+
+  cap: 100

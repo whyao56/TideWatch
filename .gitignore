@@ -1,0 +1,38 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# ---- 测试与缓存 ----
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ---- 数据产物 ----
+# 抓取下来的原始数据不进版本库（可能含个人信息，也可能很大）
+data/raw/
+# 检测报告是产物，可重跑生成
+out/
+
+# ---- 保留示例与评测集 ----
+!data/sample/
+!data/eval/
+!data/raw/.gitkeep
+
+# ---- 环境与密钥 ----
+# 抓取 B站/抖音 需要 Cookie，绝对不能提交
+.env
+.env.*
+*.key
+cookies.txt
+
+# ---- 编辑器与系统 ----
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

@@ -1,0 +1,43 @@
+# 正则规则：捕捉结构化特征
+#
+# 和话术库的分工：话术库管「说了什么」，正则管「长什么样」。
+# 手机号、QQ 号、外链这类东西，用枚举是穷举不完的，必须靠模式。
+#
+# pattern 一律用 YAML 单引号字符串，这样 \d \s 等转义保持原样，
+# 不需要写双反斜杠。
+
+rules:
+  - tag: 手机号
+    weight: 1.0
+    desc: 中国大陆手机号，前后不能再接数字（避免命中订单号）
+    pattern: '(?<!\d)1[3-9]\d{9}(?!\d)'
+
+  - tag: 微信号
+    weight: 1.0
+    desc: 微信/vx/v信 后面跟一串字母数字
+    pattern: '(?:微信|weixin|vx|v信|威信|加v)\s*[:：]?\s*[a-zA-Z][a-zA-Z0-9_-]{4,20}'
+
+  - tag: QQ号
+    weight: 0.9
+    desc: qq 前缀 + 5-11 位数字
+    pattern: '(?:qq|QQ|Qq|扣扣|抠抠|q群)\s*[:：]?\s*[1-9]\d{4,10}'
+
+  - tag: 群号
+    weight: 0.9
+    desc: 群 + 6-12 位数字
+    pattern: '(?:群号|群聊|交流群|进群)\s*[:：]?\s*[1-9]\d{5,11}'
+
+  - tag: 外链
+    weight: 0.8
+    desc: http(s) 链接
+    pattern: 'https?://[^\s，。！？、）】]+'
+
+  - tag: 短链
+    weight: 0.9
+    desc: 常见短链服务域名
+    pattern: '(?:t\.cn|url\.cn|dwz\.cn|bit\.ly|suo\.im|sourl\.cn|mrw\.so)/[A-Za-z0-9]+'
+
+  - tag: 拆分号码
+    weight: 0.7
+    desc: 用连字符/空格把号码拆开写（规避手段）
+    pattern: '\d[\d\-—\s.]{7,}\d'
