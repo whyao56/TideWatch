@@ -1,5 +1,10 @@
 # tidewatch
 
+[![CI](https://github.com/whyao56/TideWatch/actions/workflows/ci.yml/badge.svg)](https://github.com/whyao56/TideWatch/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12%20%7C%203.13-blue.svg)](https://www.python.org/)
+[![Dependencies](https://img.shields.io/badge/%E4%BE%9D%E8%B5%96%E4%BB%85-PyYAML-brightgreen.svg)](https://pypi.org/project/PyYAML/)
+
 **一个可解释、可插拔、可迭代的网络水军与协同行为识别引擎。**
 
 不用 GPU，不用 API Key，不用数据库。核心依赖只有一个 `PyYAML`。
