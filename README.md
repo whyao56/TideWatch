@@ -240,17 +240,56 @@ tidewatch/
 │   ├── matching.py           AC 自动机（多模式串匹配）
 │   ├── text.py               归一化、抗规避折叠、分词、SimHash、LCS、熵
 │   ├── rules.py              规则库加载与缓存
+│   ├── paths.py              资源路径解析（源码态 / 冻结态走同一套逻辑）
+│   ├── version.py            版本号的唯一来源
 │   ├── signals/              三层信号（唯一的扩展点）
 │   ├── scoring.py            聚合评分 + 跨层联动 + 团伙传播
 │   ├── pipeline.py           端到端编排（很薄，只做编排和计时）
 │   ├── report.py             可解释报告（文字 / JSON / Markdown）
 │   ├── adapters/             数据接入层（B站评论、弹幕 XML、通用映射）
-│   └── cli.py                命令行入口
+│   └── cli.py                命令行入口（scan / signals / rules / doctor）
 ├── eval/run_eval.py          消融评测（7 组对照 + 团伙纯度）
+├── packaging/                PyInstaller 配置、入口脚本、图标、发行包使用说明
 ├── scripts/gen_sample.py     合成数据生成器（7 种注入模式）
+├── scripts/build_exe.py      一条命令产出 Windows 免安装包
 ├── scripts/fetch_bilibili.py 抓取示例（可选，先读它的合规说明）
-├── tests/                    161 条测试，含一批回归测试
-└── docs/                     架构、设计取舍、实测数据
+├── tests/                    183 条测试，含一批回归测试
+└── docs/                     架构、设计取舍、实测数据、打包与发行
+```
+
+---
+
+## Windows 免安装版
+
+不想装 Python 的话，直接下载发行包，**解压即用、不用安装任何东西**：
+
+```
+TideWatch-0.0.1-win64.zip        ← 解压出整个文件夹
+└── TideWatch-0.0.1-win64/
+    ├── TideWatch.exe
+    ├── configs/                 ← 可以直接改
+    ├── rules/                   ← 可以直接改（微调的主要入口）
+    ├── data/sample/             随包的 193 条样例数据
+    └── 使用说明.md
+```
+
+在解压出来的目录里开一个 PowerShell：
+
+```powershell
+.\TideWatch.exe doctor                              # 先自检，确认环境没问题
+.\TideWatch.exe scan data\sample\sample.jsonl --evidence
+```
+
+`doctor` 会打印版本号、程序目录、资源根、配置指纹、规则库统计，并且**真的跑一遍
+最小数据集**确认引擎能出结论 —— 它回答的是「能不能用」，不是「库导进来了没有」。
+
+打包的取舍、下发方式、以及**明确没验证过的东西**见 [`docs/packaging.md`](docs/packaging.md)。
+
+自己构建：
+
+```bash
+pip install ".[dev]" pyinstaller
+make exe            # 或 python scripts/build_exe.py
 ```
 
 ---
@@ -317,6 +356,7 @@ make help      # 看所有可用命令
 make test      # 跑测试
 make lint      # 静态检查
 make demo      # 生成数据 → 扫描 → 评测，一条龙
+make exe       # 构建 Windows 免安装发行包
 ```
 
 测试里有一批**回归测试**，每一条都对应一个「跑起来不报错但结论是错的」缺陷。
@@ -332,6 +372,14 @@ make demo      # 生成数据 → 扫描 → 评测，一条龙
 | `test_synergy_bonus_requires_cross_kind` | 同一层命中十个信号被当成十条独立证据 |
 | `test_set_works_on_both_sides_of_subcommand` | CLI 的 `--set` 只有写在子命令前面才生效 |
 | `test_targets_keeps_unhit_entries_visible` | 未命中的目标从结果里消失，导致算不出召回率 |
+| `test_version_matches_pyproject` | 打包后版本号在 pyproject / 包内常量 / 配置文件三处不一致 |
+| `test_partial_resource_root_is_not_silently_skipped` | 资源目录不完整时安静切到兜底副本，使用者改的规则不生效却不报错 |
+| `test_seed_user_root_never_overwrites_user_edits` | 「首次运行」把使用者微调过的规则库覆盖掉 |
+| `test_no_arguments_from_explorer_pauses_instead_of_flashing` | 双击 exe 一闪就关，使用者连报错都看不到 |
+
+版本号只有一处（`src/tidewatch/version.py`），`pyproject.toml` 与
+`configs/default.yaml` 由测试盯着必须和它一致 —— 打包之后最容易「安静地错」
+的就是版本号，而它一错，使用者核对版本的能力就没了。
 
 ---
 
