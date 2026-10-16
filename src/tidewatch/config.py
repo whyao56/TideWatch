@@ -21,9 +21,37 @@ from typing import Any
 
 import yaml
 
-__all__ = ["Config", "PROJECT_ROOT", "DEFAULT_CONFIG_PATH", "ENV_PREFIX", "env_overrides"]
+from tidewatch import paths
 
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
+__all__ = [
+    "Config",
+    "PROJECT_ROOT",
+    "DEFAULT_CONFIG_PATH",
+    "ENV_PREFIX",
+    "env_overrides",
+    "project_root",
+]
+
+
+def project_root() -> Path:
+    """资源根目录：源码态是仓库根，冻结态是 exe 同级目录（详见 paths.py）。
+
+    **每次调用都重新解析**，而不是在 import 时算一次存起来 ——
+    `TIDEWATCH_HOME` 与测试里的临时目录都要能立刻生效。
+    这也是为什么这里不用 `Path(__file__).parents[2]`：打包后 `__file__`
+    指向解压出来的临时目录，同一个表达式会静默指向一个不存在的地方，
+    表现为「配置文件找不到」，或者更糟：找到一份空配置，
+    于是所有信号权重悄悄回落到默认值。
+
+    走模块属性（`paths.resource_root()`）而不是 `from ... import resource_root`，
+    是为了让测试能替换掉这一层 —— 直接 import 名字会把引用钉死在导入时刻，
+    之后再改 `paths` 模块上的同名函数就不生效了。
+    """
+    return paths.resource_root()
+
+
+# 兼容旧引用。新代码用 `project_root()`，以便环境变量的改动即时反映出来。
+PROJECT_ROOT = project_root()
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "configs" / "default.yaml"
 
 ENV_PREFIX = "TW__"
@@ -97,10 +125,10 @@ class Config:
         return got if isinstance(got, dict) else {}
 
     def path(self, key: str, default: str = "") -> Path:
-        """把配置里的相对路径解析成绝对路径（相对项目根）。"""
+        """把配置里的相对路径解析成绝对路径（相对资源根目录）。"""
         raw = self.get(key, default) or default
         p = Path(str(raw))
-        return p if p.is_absolute() else PROJECT_ROOT / p
+        return p if p.is_absolute() else project_root() / p
 
     def signal_cfg(self, name: str) -> dict[str, Any]:
         """取某个信号的配置段，并补上通用默认值。
@@ -150,9 +178,9 @@ class Config:
         overrides: Iterable[str] | None = None,
     ) -> Config:
         """加载配置。优先级：命令行 --set > 环境变量 > YAML。"""
-        cfg_path = Path(path) if path else DEFAULT_CONFIG_PATH
+        cfg_path = Path(path) if path else project_root() / "configs" / "default.yaml"
         if not cfg_path.is_absolute():
-            cfg_path = PROJECT_ROOT / cfg_path
+            cfg_path = project_root() / cfg_path
         if not cfg_path.exists():
             raise FileNotFoundError(f"找不到配置文件: {cfg_path}")
         data = yaml.safe_load(cfg_path.read_text(encoding="utf-8")) or {}

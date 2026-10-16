@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "tidewatch"
-version = "0.1.0"
+version = "0.0.1"
 description = "可解释、可插拔、可迭代的网络水军与协同行为识别引擎"
 readme = "README.md"
 requires-python = ">=3.10"
