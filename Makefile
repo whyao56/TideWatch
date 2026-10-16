@@ -17,7 +17,7 @@ else
 	VENV_BIN := $(VENV)/bin
 endif
 
-.PHONY: help init test lint fmt eval sample scan demo clean freeze exe icon
+.PHONY: help init test lint fmt eval sample scan demo clean freeze exe icon shots
 
 help:
 	@echo "make init     创建虚拟环境并安装依赖（含开发依赖）"
@@ -30,6 +30,7 @@ help:
 	@echo "make demo     sample -> scan -> eval 一条龙"
 	@echo "make exe      构建 Windows 免安装发行包（dist/*.zip）"
 	@echo "make icon     重新生成 exe 图标（需要 pillow）"
+	@echo "make shots    重新生成 README 里的终端截图（需要 Edge/Chrome）"
 	@echo "make clean    清理缓存与产物（不动 data/raw 与 data/sample）"
 
 $(VENV_BIN)/python:
@@ -84,3 +85,9 @@ exe:
 # 图标已提交进版本库，平时不需要重跑；改了配色再执行这一条。
 icon:
 	$(VENV_BIN)/python scripts/make_icon.py
+
+# 重新生成 README 里的终端截图。需要本机有 Edge 或 Chrome（只用来把 HTML 画成 PNG）。
+# CLI 的输出格式改了之后应该重跑一次 —— 一张旧的截图比没有截图更糟：
+# 它看起来像证据，但已经不对了。
+shots:
+	$(VENV_BIN)/python scripts/make_readme_shots.py
