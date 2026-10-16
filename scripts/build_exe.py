@@ -29,6 +29,7 @@ import shutil
 import subprocess
 import sys
 import time
+import traceback
 import zipfile
 from pathlib import Path
 
@@ -41,6 +42,14 @@ BUILD = ROOT / "build"
 # 那会让「同一份 dist 打两次」得到不同的 SHA。写死成 1980-01-01
 # （zip 格式能表示的最早时间）之后，打包这一步就完全确定了。
 ZIP_STAMP = (1980, 1, 1, 0, 0, 0)
+
+# 阶段标记。CI 上失败时，公开可读的注解只带得住日志尾部几十行 ——
+# 有了这些标记，光看尾部就能知道**停在哪一步**，不用把整份日志捞回来。
+_STARTED = time.perf_counter()
+
+
+def stage(name: str) -> None:
+    print(f"\n[stage] {name}（累计 {time.perf_counter() - _STARTED:.1f}s）", flush=True)
 
 
 def read_version() -> str:
@@ -58,10 +67,26 @@ def platform_tag() -> str:
     return f"win{bits}"
 
 
-def run(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
+def run(cmd: list[str], *, timeout: int = 600, **kwargs) -> subprocess.CompletedProcess:
+    """跑一条外部命令。默认 10 分钟超时。
+
+    超时是刻意加的：打包后调 exe 时，如果被安全软件拦在扫描环节，
+    表现是**挂住**而不是报错。没有超时的话，CI 上会一直跑到 6 小时的作业上限，
+    而作业日志只会告诉你「超时了」——又是「看不到原因」的那类问题。
+    """
     printable = " ".join(str(part) for part in cmd)
-    print(f"$ {printable}")
-    return subprocess.run(cmd, check=True, **kwargs)  # noqa: S603
+    print(f"$ {printable}", flush=True)
+    try:
+        return subprocess.run(cmd, check=True, timeout=timeout, **kwargs)  # noqa: S603
+    except subprocess.CalledProcessError as exc:
+        # CalledProcessError 的默认文本只有「returned non-zero exit status 1」。
+        # 而冒烟那几次调用带了 capture_output，子进程的输出被收进 exc 里、
+        # 不会印到屏幕上 —— 于是「exe 为什么退出码非 0」恰好变成看不到的那个东西。
+        # 这里把它补印出来。PyInstaller 那次没捕获，本来就直通控制台。
+        for label, blob in (("stdout", exc.stdout), ("stderr", exc.stderr)):
+            if blob:
+                print(f"--- 子进程 {label} ---\n{blob}", flush=True)
+        raise
 
 
 # --------------------------------------------------------------------------
@@ -237,17 +262,20 @@ def main() -> int:
     os.chdir(ROOT)
     version = read_version()
     print(f"=== TideWatch {version} · {platform_tag()} ===")
-    print(f"Python {platform.python_version()} · {sys.executable}\n")
+    print(f"Python {platform.python_version()} · {sys.executable}")
+    print(f"PyInstaller {_pyinstaller_version()}\n", flush=True)
 
+    stage("PyInstaller 构建")
     app = build()
+    stage("补齐同级资源 / 改名成发行目录")
     release = stage_release(app)
 
     if not args.skip_smoke:
-        print("对产物做冒烟：")
+        stage("对真实产物做冒烟")
         smoke(release)
 
     files = sum(1 for _ in release.rglob("*") if _.is_file())
-    print(f"发行目录 {release.relative_to(ROOT)}：{files} 个文件 · {human(dir_size(release))}")
+    print(f"\n发行目录 {release.relative_to(ROOT)}：{files} 个文件 · {human(dir_size(release))}")
 
     if args.no_zip:
         return 0
@@ -257,6 +285,7 @@ def main() -> int:
     archive = release.parent / f"{release.name}.zip"
     if archive.exists():
         archive.unlink()
+    stage("确定性打包")
     digest = zip_dir(release, archive)
     print(f"压缩包   {archive.name} · {human(archive.stat().st_size)}")
     print(f"SHA256   {digest}")
@@ -266,6 +295,7 @@ def main() -> int:
     print(f"校验和   {checksum.name}")
 
     if args.verify_reproducible:
+        stage("复核打包可复现")
         probe = archive.parent / f"{archive.name}.probe"
         again = zip_dir(release, probe)
         probe.unlink()
@@ -280,5 +310,24 @@ def main() -> int:
     return 0
 
 
+def _pyinstaller_version() -> str:
+    """记下 PyInstaller 的版本。
+
+    CI 里它是即装即用的最新版，本机是当时装下的那一版 —— 两边不一致时，
+    「本地能构建、CI 不能」这种事就只是版本差异，而不是代码差异。
+    印出来，这一条就不用再靠猜。
+    """
+    from PyInstaller import __version__
+
+    return __version__
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except SystemExit:
+        raise
+    except BaseException:
+        print("\n[fail] 构建中断，完整回溯如下：", file=sys.stderr, flush=True)
+        traceback.print_exc()
+        raise SystemExit(1) from None
