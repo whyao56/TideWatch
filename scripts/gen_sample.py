@@ -18,6 +18,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import os
 import random
 import sys
 from datetime import datetime, timedelta, timezone
@@ -269,7 +271,30 @@ def generate() -> list[dict]:
     return records
 
 
+def _setup_console() -> None:
+    """把标准输出切到 UTF-8 —— 见 scripts/build_exe.py 里同名函数的说明。
+
+    这里那份（和 make_icon.py 里那份）刻意没有抽成公共模块：scripts/ 下的
+    每个文件都是可以直接 `python scripts/xxx.py` 跑起来的独立工具，
+    一个跨文件的 import 会跟着 sys.path 一起变脆。
+
+    实际问题很直接：英文 Windows 上 stdout 是 cp1252，编不了汉字，
+    这个脚本的第一条中文提示就会把它打挂。
+    """
+    if os.name == "nt":
+        with contextlib.suppress(Exception):
+            import ctypes
+
+            ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+    for stream in (sys.stdout, sys.stderr):
+        with contextlib.suppress(Exception):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main() -> None:
+    # 必须在任何 print 之前。
+    _setup_console()
+
     records = generate()
     positives = sum(1 for r in records if r["is_synthetic_positive"])
     labelled = ROOT / "data" / "eval" / "synthetic_labeled.jsonl"

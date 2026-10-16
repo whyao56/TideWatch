@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import os
 import platform
@@ -50,6 +51,32 @@ _STARTED = time.perf_counter()
 
 def stage(name: str) -> None:
     print(f"\n[stage] {name}（累计 {time.perf_counter() - _STARTED:.1f}s）", flush=True)
+
+
+def _setup_console() -> None:
+    """把标准输出切到 UTF-8，让中文提示在任何一台 Windows 上都能打出来。
+
+    这个脚本的每条提示都是中文，而 Windows 上 stdout 的编码由系统区域设置决定：
+
+      - 简体中文机器 → GBK，它**恰好**能编码汉字，所以本地跑永远碰不到问题；
+      - 英文机器 → cp1252，连「构建」两个字都编不了，脚本会在第一条中文提示上
+        直接崩掉：`UnicodeEncodeError: 'charmap' codec can't encode characters`。
+
+    这就是 v0.0.1 第一次发版失败的原因 —— CI 的 runner 是 en-US。
+    「本机能跑」不等于「能跑」，所以这里不依赖区域设置。
+
+    stderr 默认是 backslashreplace，不会崩，但中文报错会变成 `\\u6784\\u5efa`
+    这种没法读的东西，所以一起切过去。
+    """
+    if os.name == "nt":
+        with contextlib.suppress(Exception):
+            import ctypes
+
+            ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+    for stream in (sys.stdout, sys.stderr):
+        with contextlib.suppress(Exception):
+            # pytest 的捕获流、被重定向到文件的流没有 reconfigure，静默跳过。
+            stream.reconfigure(encoding="utf-8", errors="replace")
 
 
 def read_version() -> str:
@@ -249,6 +276,10 @@ def human(num: int) -> str:
 
 
 def main() -> int:
+    # 必须是第一件事：下面每一条提示都是中文，而 stdout 的编码在英文 Windows 上
+    # 是 cp1252，编不了汉字。放在这里之前，第一条 print 就是崩溃点。
+    _setup_console()
+
     parser = argparse.ArgumentParser(description="构建 TideWatch 的 Windows 发行包")
     parser.add_argument("--skip-smoke", action="store_true", help="跳过对产物的冒烟检查")
     parser.add_argument("--no-zip", action="store_true", help="只构建目录，不压缩")

@@ -15,7 +15,10 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import math
+import os
+import sys
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -102,7 +105,26 @@ def render(size: int) -> Image.Image:
     return base
 
 
+def _setup_console() -> None:
+    """把标准输出切到 UTF-8 —— 见 scripts/build_exe.py 里同名函数的说明。
+
+    英文 Windows 上 stdout 是 cp1252，编不了汉字，下面那两条「已写入 …」
+    会直接把它打挂。中文机器上是 GBK，恰好能编码，所以本地跑不出来。
+    """
+    if os.name == "nt":
+        with contextlib.suppress(Exception):
+            import ctypes
+
+            ctypes.windll.kernel32.SetConsoleOutputCP(65001)
+    for stream in (sys.stdout, sys.stderr):
+        with contextlib.suppress(Exception):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def main() -> int:
+    # 必须在任何 print 之前。
+    _setup_console()
+
     parser = argparse.ArgumentParser(description="生成 TideWatch 图标")
     parser.add_argument("--out", default=str(DEFAULT_OUT), help="ico 输出路径")
     parser.add_argument("--png", default=None, help="额外导出一张 256px PNG 预览")
