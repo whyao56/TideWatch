@@ -11,6 +11,7 @@ import json
 
 import pytest
 
+from tidewatch import cli as cli_module
 from tidewatch.cli import main
 
 RECORDS = [
@@ -192,3 +193,47 @@ def test_set_works_on_both_sides_of_subcommand(sample_path, tmp_path, before) ->
     argv = [*override, *argv] if before else [*argv, *override]
     assert main(argv) == 0
     assert "命中话术" not in out_path.read_text(encoding="utf-8")
+
+
+# --------------------------------------------------------------------------
+# 无参数运行：区分「在终端里敲了个光秃秃的命令」与「双击 exe」
+# --------------------------------------------------------------------------
+
+
+def test_no_arguments_from_a_shell_prints_hint_and_exits_2(capsys) -> None:
+    """在终端里不带参数运行属于用法错误，返回 2 并给出用法。"""
+    assert main([]) == 2
+    out = capsys.readouterr().out
+    assert "用法" in out
+    assert "doctor" in out
+    # 最后一个提示必须是一条能直接粘进终端跑的命令
+    assert "scan data\\sample\\sample.jsonl" in out
+
+
+def test_no_arguments_from_explorer_pauses_instead_of_flashing(monkeypatch, capsys) -> None:
+    """回归：双击 exe 时不能「闪一下就关」。
+
+    双击等于无参数运行。如果直接让 argparse 报错退出，新开的控制台会立刻关掉，
+    使用者看到的只是窗口闪了一下 —— 这是打包后最糟的失败方式，
+    因为连「哪里错了」都看不到。所以在资源管理器启动时，必须停住等一次回车。
+    """
+    monkeypatch.setattr(cli_module, "_launched_from_explorer", lambda: True)
+
+    paused: list[str] = []
+    monkeypatch.setattr("builtins.input", lambda prompt="": paused.append(prompt) or "")
+
+    assert main([]) == 0
+    out = capsys.readouterr().out
+    # 真的停住了（等了一次回车），而不是打印完就退出
+    assert paused, "双击启动时没有停下来等回车"
+    assert "用法" in out
+    assert "scan data\\sample\\sample.jsonl" in out
+
+
+def test_doctor_is_recognised_as_a_subcommand() -> None:
+    parser = cli_module.build_parser()
+    args = parser.parse_args(["doctor"])
+    assert args.command == "doctor"
+    # 子命令下的 --config / --set 必须可用（doctor 也要能吃覆盖项）
+    assert args.config is None
+    assert args.overrides == []
