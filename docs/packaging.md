@@ -193,6 +193,26 @@ exe 的版本资源是顺手加的，价值在于**不用运行就能核对版�
 - **PyInstaller 构建这一步不是逐字节确定的**：同一份源码连构建两次，
   产物的 SHA 通常不同。自己重跑一遍构建得到不同的 SHA 是**正常的**。
 
+### `.sha256` 文件的行尾是 LF
+
+这个文件的唯一用途是喂给校验工具，所以它得是标准 `sha256sum` 格式：
+`<64 位十六进制><两空格><文件名><LF>`。
+
+行尾必须是 LF，**不能是 CRLF**。构建脚本里 `write_checksum()` 显式写了
+`newline="\n"` —— 因为 `Path.write_text` 默认会把 `\n` 翻译成 `os.linesep`，
+在 Windows 上写出来就是 CRLF。后果是 Linux / macOS / WSL / Git Bash 上
+`sha256sum -c` 全部读不了，只报一句很难看懂的：
+
+```text
+sha256sum: 'TideWatch-0.0.1-win64.zip'$'\r': No such file or directory
+```
+
+行尾那个 `\r` 被当成了文件名的一部分。
+
+v0.0.1 发出去的 `.sha256` 就是 CRLF 的（`Get-FileHash` + 人工比对不受影响，
+所以上面那条口径仍然成立；受影响的是 `sha256sum -c` 这个惯用法）。
+`tests/test_build_script.py` 里有一条断言盯的是行尾**字节**，把这个口子堵住了。
+
 ---
 
 ## CI

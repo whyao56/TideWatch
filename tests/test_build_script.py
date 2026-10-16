@@ -19,6 +19,7 @@ Windows 上 stdout 的编码由系统区域设置决定：简体中文机器是 
 
 from __future__ import annotations
 
+import importlib.util
 import os
 import subprocess
 import sys
@@ -181,3 +182,41 @@ def test_chinese_still_prints_on_the_native_console() -> None:
 
     assert proc.returncode == 0, _text(proc.stderr)
     assert "构建完成，用时 15.7s" in _text(proc.stdout)
+
+
+# --------------------------------------------------------------------------
+# 校验和文件：它的唯一用途是喂给 `sha256sum -c`
+# --------------------------------------------------------------------------
+
+
+def _load_build_script():
+    """把构建脚本当模块载入（不会跑 main —— 它有 __main__ 守卫）。"""
+    spec = importlib.util.spec_from_file_location(
+        "build_exe_under_test", ROOT / "scripts" / "build_exe.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_checksum_file_uses_lf_not_crlf(tmp_path: Path) -> None:
+    """行尾必须是 LF。
+
+    Path.write_text 默认把 `\\n` 翻译成 os.linesep，于是在 Windows 上写出来的是
+    CRLF —— 而那个文件在 Linux / macOS / WSL / Git Bash 上喂给 `sha256sum -c`
+    会失败，报一句看不懂的：
+
+        sha256sum: 'TideWatch-0.0.1-win64.zip'$'\\r': No such file or directory
+
+    行尾的 \\r 被当成了文件名的一部分。这条断言盯的是**字节**，不是内容 ——
+    「内容对」和「能用」是两码事，这个缺陷就长在两者的缝里。
+    """
+    module = _load_build_script()
+    archive = tmp_path / "TideWatch-0.0.1-win64.zip"
+    # 随便一点字节就行：这条测试只关心随之写出的那个 .sha256 文件。
+    archive.write_bytes(b"not really a zip")
+
+    raw = module.write_checksum(archive, "a" * 64).read_bytes()
+
+    assert b"\r" not in raw, f"校验和文件里混进了 CR，各平台的 sha256sum -c 会读不了：{raw!r}"
+    assert raw == f"{'a' * 64}  TideWatch-0.0.1-win64.zip\n".encode(), raw

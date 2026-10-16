@@ -259,6 +259,23 @@ def sha256_of(path: Path) -> str:
     return h.hexdigest()
 
 
+def write_checksum(archive: Path, digest: str) -> Path:
+    """写下校验和文件。行尾固定用 LF。
+
+    `newline="\\n"` 不是可有可无的修饰。Path.write_text 默认会把 `\\n`
+    翻译成 os.linesep —— 在 Windows 上写出来的就是 CRLF。而这样的文件在
+    Linux / macOS / WSL / Git Bash 上喂给 `sha256sum -c` 会直接失败：
+
+        sha256sum: 'TideWatch-0.0.1-win64.zip'$'\\r': No such file or directory
+
+    行尾那个 \\r 被当成了文件名的一部分。校验和存在的**唯一**用途就是这个用法，
+    所以它必须能被各平台的 @file 形式读进去。两空格是 sha256sum 的文本模式约定。
+    """
+    checksum = archive.parent / f"{archive.name}.sha256"
+    checksum.write_text(f"{digest}  {archive.name}\n", encoding="utf-8", newline="\n")
+    return checksum
+
+
 def dir_size(path: Path) -> int:
     return sum(p.stat().st_size for p in path.rglob("*") if p.is_file())
 
@@ -321,8 +338,7 @@ def main() -> int:
     print(f"压缩包   {archive.name} · {human(archive.stat().st_size)}")
     print(f"SHA256   {digest}")
 
-    checksum = archive.parent / f"{archive.name}.sha256"
-    checksum.write_text(f"{digest}  {archive.name}\n", encoding="utf-8")
+    checksum = write_checksum(archive, digest)
     print(f"校验和   {checksum.name}")
 
     if args.verify_reproducible:
