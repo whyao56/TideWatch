@@ -1,0 +1,90 @@
+name: Release
+
+# 什么时候跑：
+#   - 推送 v* tag（例如 v0.0.1）→ 构建并发布 GitHub Release
+#   - 手动触发 → 只构建 + 冒烟，把产物存成 CI artifact（用来验证打包链路是好的）
+#
+# 刻意在 windows-latest 上构建：PyInstaller 不支持跨平台打包，
+# 发行包必须和目标平台同源；「在 Linux 上打个 Windows 包」这种事做不了。
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: 构建 Windows 发行包
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]" pyinstaller
+
+      # 先跑质量门再打包。反过来的话，一个坏版本会先变成 exe 再被发现，
+      # 而发行包一旦被人下载走就收不回来了。
+      - name: 静态检查
+        run: python -m ruff check src tests scripts eval
+
+      - name: 测试
+        run: python -m pytest tests -q
+
+      # 和本地走同一条脚本。两边不一样的话，「CI 是绿的」
+      # 就证明不了发给使用者的那个包是好的。
+      - name: 构建发行包（含对产物的冒烟检查）
+        run: python scripts/build_exe.py --verify-reproducible
+
+      - name: 核对版本号与 tag 一致
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}".TrimStart("v")
+          $pkg = (Select-String -Path src/tidewatch/version.py -Pattern '__version__ = "([^"]+)"').Matches[0].Groups[1].Value
+          if ($tag -ne $pkg) {
+            Write-Error "tag ($tag) 和包内版本 ($pkg) 不一致 —— 发布出来的包会被贴上错误的版本号"
+            exit 1
+          }
+          Write-Output "版本一致：$pkg"
+
+      - name: 存成 CI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TideWatch-win64
+          path: |
+            dist/*.zip
+            dist/*.zip.sha256
+          if-no-files-found: error
+
+      # 发行说明写在仓库里（docs/release-notes/v0.0.1.md），而不是只手打一遍。
+      # 手打的那份三个月后没人找得到，仓库里的这份能被 review、能改。
+      # 缺文件时自动生成一份兜底，免得「忘了写说明」直接让发布失败。
+      - name: 准备发行说明
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $file = "docs/release-notes/${{ github.ref_name }}.md"
+          if (-not (Test-Path $file)) {
+            New-Item -ItemType Directory -Force -Path "docs/release-notes" | Out-Null
+            "本版内容见提交记录。" | Out-File -Encoding utf8 $file
+          }
+          Write-Output "发行说明：$file"
+
+      - name: 发布 Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.zip
+            dist/*.zip.sha256
+          body_path: docs/release-notes/${{ github.ref_name }}.md
+          draft: false
+          prerelease: false

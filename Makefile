@@ -17,7 +17,7 @@ else
 	VENV_BIN := $(VENV)/bin
 endif
 
-.PHONY: help init test lint fmt eval sample scan demo clean freeze
+.PHONY: help init test lint fmt eval sample scan demo clean freeze exe icon
 
 help:
 	@echo "make init     创建虚拟环境并安装依赖（含开发依赖）"
@@ -28,6 +28,8 @@ help:
 	@echo "make scan     扫描样例数据，打印可疑目标"
 	@echo "make eval     跑消融评测，刷新 docs/benchmark.md"
 	@echo "make demo     sample -> scan -> eval 一条龙"
+	@echo "make exe      构建 Windows 免安装发行包（dist/*.zip）"
+	@echo "make icon     重新生成 exe 图标（需要 pillow）"
 	@echo "make clean    清理缓存与产物（不动 data/raw 与 data/sample）"
 
 $(VENV_BIN)/python:
@@ -73,3 +75,12 @@ clean:
 freeze:
 	$(VENV_BIN)/python -m pip freeze > requirements-lock.txt
 	@echo "已写入 requirements-lock.txt（用于复现实验环境）"
+
+# Windows 免安装版。需要 pyinstaller（pip install pyinstaller）。
+# 产物在 dist/：一个解压即用的目录 + 一个 zip + 校验和。
+exe:
+	$(VENV_BIN)/python scripts/build_exe.py
+
+# 图标已提交进版本库，平时不需要重跑；改了配色再执行这一条。
+icon:
+	$(VENV_BIN)/python scripts/make_icon.py
